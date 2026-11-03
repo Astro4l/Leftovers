@@ -281,13 +281,13 @@ class EditorViewModel(
     /** How much one unit of [foreignCurrency] is in the app's currency, as typed ("22.7"). */
     var rateText by mutableStateOf("")
         private set
-    private val rate: java.math.BigDecimal? get() = rateText.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
+    private val rate: java.math.BigDecimal? get() = com.leftovers.app.util.MoneyMath.rate(rateText)
 
     /** The amount in the app's currency: what's saved and counted. */
     val totalMinor: Long get() {
         val code = foreignCurrency ?: return amountMinor
         val r = rate ?: return 0
-        return java.math.BigDecimal.valueOf(amountMinor).multiply(r).setScale(0, java.math.RoundingMode.HALF_UP).toLong()
+        return com.leftovers.app.util.MoneyMath.toMinorClamped(java.math.BigDecimal.valueOf(amountMinor).multiply(r))
     }
 
     fun useForeign(code: String?, rate: String) {

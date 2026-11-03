@@ -77,7 +77,7 @@ object AmountInput {
     }
 
     fun toMinor(text: String): Long? =
-        text.toBigDecimalOrNull()?.movePointRight(2)?.setScale(0, RoundingMode.HALF_UP)?.toLong()
+        text.toBigDecimalOrNull()?.movePointRight(2)?.let(MoneyMath::toMinorOrNull)
 
     fun fromMinor(minor: Long): String =
         BigDecimal.valueOf(minor, 2).stripTrailingZeros().toPlainString()

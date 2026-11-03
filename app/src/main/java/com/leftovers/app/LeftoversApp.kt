@@ -49,6 +49,8 @@ class LeftoversApp : Application() {
         BillReminders.createChannel(this)
         com.leftovers.app.util.UpdateCheck.createChannel(this)
         container.start()
+        // Old exports are plain-text copies of the user's figures; clear them off the main thread.
+        Thread({ com.leftovers.app.util.ExportCache.purge(this) }, "export-purge").start()
     }
 }
 

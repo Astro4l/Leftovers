@@ -3,6 +3,19 @@
 All notable changes to Leftovers. Download any version from
 [Releases](https://github.com/saisaharsh3/Leftovers/releases).
 
+## Unreleased
+
+- A Dates budget can be limited to chosen categories and/or accounts (Budget plan → Dates → Only count), so a trip, or food, transport and airtime, only uses up its own amount and rent paid in the same dates doesn't. Home, Plan, the widgets and the budget alerts all follow it
+- Security: new backups and sync files use 600,000 rounds of key stretching (was 150,000). Older backups still open, and a file that asks for an absurd number of rounds is refused instead of freezing the phone
+- Security: sync to a server needs a backup password and only accepts files encrypted with it; a server can no longer slip in a plain-text file as another phone
+- Security: backups, imports, sync files and AI replies have a size limit, so a zip that unpacks to gigabytes is refused instead of crashing the app
+- Security: amounts and exchange rates that are absurdly large or small (like `1e999999999`), from a file, a feed or an AI reply, are refused instead of hanging the app or wrapping around into wrong balances
+- Security: the update notice and goal links only open real web addresses (https), never another app (`intent:`, `tel:`, `sms:`)
+- Security: the app lock's wait no longer becomes days after a restart, and wrong tries can't be fired in parallel
+- Security: bill reminders keep names and amounts off the lock screen
+- Security: exports left in the cache are deleted after a day
+- Security: Leftovers Dev is signed with a key of its own, never the release key (install it fresh once: back up first). The GitHub build that makes it can't publish, and the one that publishes never sees a signing key; actions are pinned to exact commits
+
 ## 1.9.0
 
 - Home screen widgets come in Glass, Dark or Light (Settings → Appearance), and fit any size they're made: one row high, each keeps what matters

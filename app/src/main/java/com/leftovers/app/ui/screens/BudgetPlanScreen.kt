@@ -14,6 +14,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -50,14 +52,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.leftovers.app.data.AccountRepository
+import com.leftovers.app.data.AccountWithBalance
 import com.leftovers.app.data.BudgetMode
 import com.leftovers.app.data.BudgetPlan
 import com.leftovers.app.data.CarryMode
+import com.leftovers.app.data.Category
 import com.leftovers.app.data.SettingsRepository
 import com.leftovers.app.data.TransactionItem
 import com.leftovers.app.data.TransactionRepository
 import com.leftovers.app.data.YearSplit
 import com.leftovers.app.ui.AppViewModelProvider
+import com.leftovers.app.ui.components.Chip
 import com.leftovers.app.ui.components.Glass
 import com.leftovers.app.ui.components.GlassScreen
 import com.leftovers.app.ui.components.PrimaryButton
@@ -65,6 +71,7 @@ import com.leftovers.app.ui.components.SectionHeader
 import com.leftovers.app.ui.components.SegmentedToggle
 import com.leftovers.app.ui.components.frosted
 import com.leftovers.app.ui.components.pressable
+import com.leftovers.app.ui.icons.CategoryIcons
 import com.leftovers.app.ui.icons.Lucide
 import com.leftovers.app.ui.theme.LocalAppColors
 import com.leftovers.app.util.AmountInput
@@ -82,6 +89,7 @@ import java.util.Locale
 class BudgetPlanViewModel(
     private val settings: SettingsRepository,
     repository: TransactionRepository,
+    accountRepository: AccountRepository,
 ) : ViewModel() {
     var loaded by mutableStateOf(false)
         private set
@@ -102,6 +110,13 @@ class BudgetPlanViewModel(
     var bucketPicker by mutableStateOf(false)
     var rangeFrom by mutableStateOf<java.time.LocalDate>(java.time.LocalDate.now())
     var rangeTo by mutableStateOf<java.time.LocalDate>(java.time.LocalDate.now().plusDays(13))
+    /** A Dates budget can be limited to some categories and/or accounts; empty means everything. */
+    var rangeCategoryIds by mutableStateOf<Set<Long>>(emptySet())
+    var rangeAccountIds by mutableStateOf<Set<Long>>(emptySet())
+    val categories: StateFlow<List<Category>> =
+        repository.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val accounts: StateFlow<List<AccountWithBalance>> =
+        accountRepository.accounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private var carryFrom: YearMonth? = null
     private var carryChoices: Map<YearMonth, Boolean> = emptyMap()
 
@@ -126,6 +141,8 @@ class BudgetPlanViewModel(
             bucketPicker = plan.bucketPicker
             plan.rangeFrom?.let { rangeFrom = it }
             plan.rangeTo?.let { rangeTo = it }
+            rangeCategoryIds = plan.rangeCategoryIds
+            rangeAccountIds = plan.rangeAccountIds
             carryFrom = plan.carryFrom
             carryChoices = plan.carryChoices
             loaded = true
@@ -146,6 +163,8 @@ class BudgetPlanViewModel(
         rangeMinor = AmountInput.toMinor(rangeText) ?: 0,
         rangeFrom = rangeFrom,
         rangeTo = rangeTo,
+        rangeCategoryIds = rangeCategoryIds,
+        rangeAccountIds = rangeAccountIds,
         buckets = buckets,
         bucketIncome = AmountInput.toMinor(bucketIncomeText) ?: 0,
         bucketPicker = bucketPicker,
@@ -516,10 +535,12 @@ private fun SplitOption(option: YearSplit, selected: Boolean, onClick: () -> Uni
 }
 
 /** A budget for dates of the user's own: from, to, and how much (#34). */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun RangeCard(viewModel: BudgetPlanViewModel) {
     val c = LocalAppColors.current
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val money = com.leftovers.app.util.LocalMoney.current
     var picking by androidx.compose.runtime.remember { mutableStateOf(false) }
     val fmt = java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM yyyy")
@@ -540,6 +561,47 @@ private fun RangeCard(viewModel: BudgetPlanViewModel) {
             }
             if (amount > 0 && days > 0) {
                 Text("${money.format(amount / days)} a day", style = MaterialTheme.typography.labelLarge, color = c.textSecondary, modifier = Modifier.padding(start = 4.dp))
+            }
+            // Optional scope: only these categories and accounts use up the amount, e.g. food and transport for a trip.
+            val limited = viewModel.rangeCategoryIds.isNotEmpty() || viewModel.rangeAccountIds.isNotEmpty()
+            Text("Only count", style = MaterialTheme.typography.labelMedium, color = c.textSecondary, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+            Text(
+                if (limited) "Only the chosen categories and accounts use up this amount. Everything else, like rent, is ignored here."
+                else "Everything uses up this amount. Pick categories or accounts to limit it, like food and transport for a trip.",
+                style = MaterialTheme.typography.bodySmall,
+                color = c.textTertiary,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                categories.filter { it.type == com.leftovers.app.data.TxType.EXPENSE }.forEach { cat ->
+                    Chip(
+                        cat.name,
+                        onClick = {
+                            val ids = viewModel.rangeCategoryIds
+                            viewModel.rangeCategoryIds = if (cat.id in ids) ids - cat.id else ids + cat.id
+                        },
+                        icon = CategoryIcons[cat.emoji],
+                        iconTint = Color(cat.color),
+                        selected = cat.id in viewModel.rangeCategoryIds,
+                    )
+                }
+            }
+            if (accounts.size > 1) {
+                Text("Accounts", style = MaterialTheme.typography.labelMedium, color = c.textSecondary, modifier = Modifier.padding(start = 4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    accounts.forEach { a ->
+                        Chip(
+                            a.name,
+                            onClick = {
+                                val ids = viewModel.rangeAccountIds
+                                viewModel.rangeAccountIds = if (a.id in ids) ids - a.id else ids + a.id
+                            },
+                            icon = CategoryIcons[a.icon],
+                            iconTint = Color(a.color),
+                            selected = a.id in viewModel.rangeAccountIds,
+                        )
+                    }
+                }
             }
             Text(
                 "Safe to spend and the budget follow these dates. When they end, set new ones.",

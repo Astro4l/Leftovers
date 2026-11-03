@@ -49,7 +49,7 @@ object StatementFile {
     /** An Excel workbook, or a backup that's a zip of JSON files. */
     private fun zip(bytes: ByteArray): Result {
         val names = runCatching {
-            ZipInputStream(ByteArrayInputStream(bytes)).use { z -> generateSequence { z.nextEntry }.map { it.name }.toList() }
+            ZipInputStream(ByteArrayInputStream(bytes)).use { z -> generateSequence { z.nextEntry }.take(MAX_ZIP_ENTRIES).map { it.name }.toList() }
         }.getOrDefault(emptyList())
         if (names.any { it.startsWith("xl/") }) {
             return runCatching { Result.Table(readXlsx(bytes)) }
@@ -58,8 +58,14 @@ object StatementFile {
         val jsons = mutableListOf<String>()
         runCatching {
             ZipInputStream(ByteArrayInputStream(bytes)).use { z ->
-                generateSequence { z.nextEntry }.forEach { e ->
-                    if (!e.isDirectory && e.name.endsWith(".json", ignoreCase = true)) jsons += decodeText(z.readBytes())
+                // One shared allowance for everything unpacked, so a zip bomb is refused rather than loaded.
+                var left = MAX_FILE_BYTES
+                generateSequence { z.nextEntry }.take(MAX_ZIP_ENTRIES).forEach { e ->
+                    if (!e.isDirectory && e.name.endsWith(".json", ignoreCase = true)) {
+                        val entry = z.readBounded(left)
+                        left -= entry.size
+                        jsons += decodeText(entry)
+                    }
                 }
             }
         }
@@ -102,9 +108,14 @@ object StatementFile {
     internal fun readXlsx(bytes: ByteArray): List<List<String>> {
         val files = mutableMapOf<String, ByteArray>()
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            generateSequence { zip.nextEntry }.forEach { entry ->
+            var left = MAX_FILE_BYTES
+            generateSequence { zip.nextEntry }.take(MAX_ZIP_ENTRIES).forEach { entry ->
                 val name = entry.name
-                if (name == "xl/sharedStrings.xml" || name.startsWith("xl/worksheets/sheet")) files[name] = zip.readBytes()
+                if (name == "xl/sharedStrings.xml" || name.startsWith("xl/worksheets/sheet")) {
+                    val part = zip.readBounded(left)
+                    left -= part.size
+                    files[name] = part
+                }
             }
         }
         val shared = files["xl/sharedStrings.xml"]?.let(::sharedStrings).orEmpty()
@@ -241,7 +252,9 @@ object StatementFile {
                 if (from >= data.size) break
                 out.write(data, from, minOf(sectorSize, data.size - from))
             }
-            return out.toByteArray().copyOf(size)
+            // The size comes from the file itself; never allocate more than what was actually read.
+            val read = out.toByteArray()
+            return read.copyOf(size.coerceIn(0, read.size))
         }
 
         private data class Entry(val name: String, val type: Int, val start: Int, val size: Int)

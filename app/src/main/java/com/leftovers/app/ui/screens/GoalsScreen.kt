@@ -657,7 +657,7 @@ private fun ProductCard(
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             links.forEachIndexed { i, l ->
                 if (i > 0) RowDivider(inset = 0.dp)
-                Row(Modifier.fillMaxWidth().pressable({ runCatching { uriHandler.openUri(l.url) } }, pressedScale = 0.98f), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().pressable({ com.leftovers.app.util.SafeLinks.web(l.url)?.let { safe -> runCatching { uriHandler.openUri(safe) } } }, pressedScale = 0.98f), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Lucide.Link, contentDescription = null, tint = c.textSecondary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {

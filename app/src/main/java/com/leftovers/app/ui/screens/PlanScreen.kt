@@ -93,14 +93,14 @@ class PlanViewModel(
     ) { all, s, recurring, goals, debts ->
         val open = debts.openBalances()
         val cycle = s.plan.cycleOf(java.time.LocalDate.now())
-        val items = all.filter { it.date in cycle }
+        val items = s.plan.scoped(all.filter { it.date in cycle })
         val budget = s.plan.budgetFor(cycle.month, all)
         PlanUiState(
             loaded = true,
             plan = s.plan,
             budget = budget,
             spent = items.totalOf(TxType.EXPENSE),
-            dailyLimit = dailyBudget(budget, items, recurring.pendingExpenses(cycle), periodEnd = cycle.end)?.dailyLimit ?: 0,
+            dailyLimit = dailyBudget(budget, items, s.plan.scopedRecurring(recurring).pendingExpenses(cycle), periodEnd = cycle.end)?.dailyLimit ?: 0,
             recurring = recurring,
             goals = goals,
             owedToYou = open.filter { it.netMinor > 0 }.sumOf { it.netMinor },
@@ -264,7 +264,7 @@ private fun planSummary(plan: BudgetPlan): String {
     return when {
         !plan.isSet -> "Not set"
         plan.mode == BudgetMode.MONTHLY -> "${money.format(plan.monthlyMinor)} a month"
-        plan.mode == BudgetMode.RANGE -> "${money.format(plan.rangeMinor)} until ${plan.rangeTo?.format(java.time.format.DateTimeFormatter.ofPattern("d MMM"))}"
+        plan.mode == BudgetMode.RANGE -> "${money.format(plan.rangeMinor)} until ${plan.rangeTo?.format(java.time.format.DateTimeFormatter.ofPattern("d MMM"))}${if (plan.isScoped) " · limited" else ""}"
         else -> "${money.format(plan.yearlyMinor)} a year · ${plan.split.title.lowercase()}"
     }
 }

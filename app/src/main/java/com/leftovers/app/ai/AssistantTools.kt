@@ -656,7 +656,8 @@ class AssistantTools(private val container: AppContainer, private val privacy: A
         return v
     }
 
-    private fun minor(value: Double): Long = BigDecimal.valueOf(value).movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
+    private fun minor(value: Double): Long =
+        com.leftovers.app.util.MoneyMath.toMinorOrNull(BigDecimal.valueOf(value).movePointRight(2)) ?: throw IllegalArgumentException("That amount is too large")
     private fun major(minor: Long): Double = BigDecimal.valueOf(minor, 2).toDouble()
     private fun label(d: LocalDate) = d.friendlyLabel()
 

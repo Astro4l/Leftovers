@@ -166,7 +166,8 @@ class HomeViewModel(
         val items = all.filter { YearMonth.from(it.date) == month }
         // The budget month, which can start on payday instead of the 1st (#34).
         val cycle = s.plan.cycleOf(todayDate)
-        val budgetItems = all.filter { it.date in cycle }
+        // A Dates budget limited to some categories or accounts only counts those.
+        val budgetItems = s.plan.scoped(all.filter { it.date in cycle })
         val budget = s.plan.budgetFor(cycle.month, all)
         // Like switching wallets: the balance, spent, income and recent entries follow the chosen account.
         // The budget and safe-to-spend stay for all money together.
@@ -177,7 +178,7 @@ class HomeViewModel(
             loaded = true,
             month = month,
             budgetSet = s.plan.isSet,
-            today = dailyBudget(budget, budgetItems, recurring.pendingExpenses(cycle), periodEnd = cycle.end),
+            today = dailyBudget(budget, budgetItems, s.plan.scopedRecurring(recurring).pendingExpenses(cycle), periodEnd = cycle.end),
             spentToday = items.filter { it.type == TxType.EXPENSE && it.epochDay == todayDate.toEpochDay() }.sumOf { it.amountMinor },
             daysLeft = cycle.daysLeft(todayDate),
             monthSpent = shownMonth.totalOf(TxType.EXPENSE),

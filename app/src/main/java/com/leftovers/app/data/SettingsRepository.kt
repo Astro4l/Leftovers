@@ -133,6 +133,8 @@ class SettingsRepository(context: Context) {
                 bucketPicker = p[BUCKET_PICKER] ?: false,
                 rangeFrom = p[RANGE_FROM]?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
                 rangeTo = p[RANGE_TO]?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
+                rangeCategoryIds = BudgetPlan.decodeIds(p[RANGE_CATEGORIES]),
+                rangeAccountIds = BudgetPlan.decodeIds(p[RANGE_ACCOUNTS]),
             ),
             budgetAlerts = p[BUDGET_ALERTS] ?: true,
             splitsAsOneBill = p[SPLITS_ONE_BILL] ?: true,
@@ -210,6 +212,8 @@ class SettingsRepository(context: Context) {
         it[BUCKET_PICKER] = plan.bucketPicker
         if (plan.rangeFrom == null) it.remove(RANGE_FROM) else it[RANGE_FROM] = plan.rangeFrom.toString()
         if (plan.rangeTo == null) it.remove(RANGE_TO) else it[RANGE_TO] = plan.rangeTo.toString()
+        if (plan.rangeCategoryIds.isEmpty()) it.remove(RANGE_CATEGORIES) else it[RANGE_CATEGORIES] = BudgetPlan.encodeIds(plan.rangeCategoryIds)
+        if (plan.rangeAccountIds.isEmpty()) it.remove(RANGE_ACCOUNTS) else it[RANGE_ACCOUNTS] = BudgetPlan.encodeIds(plan.rangeAccountIds)
         if (plan.carryChoices.isNotEmpty()) it[CARRY_CHOICES] = BudgetPlan.encodeChoices(plan.carryChoices)
         val from = plan.carryFrom ?: it[CARRY_FROM]?.let { raw -> runCatching { YearMonth.parse(raw) }.getOrNull() }
         if (plan.isSet) it[CARRY_FROM] = (from ?: YearMonth.now()).toString() else it.remove(CARRY_FROM)
@@ -325,6 +329,8 @@ class SettingsRepository(context: Context) {
         val BUCKET_PICKER = booleanPreferencesKey("bucket_picker")
         val RANGE_FROM = stringPreferencesKey("range_from")
         val RANGE_TO = stringPreferencesKey("range_to")
+        val RANGE_CATEGORIES = stringPreferencesKey("range_categories")
+        val RANGE_ACCOUNTS = stringPreferencesKey("range_accounts")
         val CARRY_CHOICES = stringPreferencesKey("carry_choices")
         val CARRY_FROM = stringPreferencesKey("carry_from")
         val BUDGET_ALERTS = booleanPreferencesKey("budget_alerts")

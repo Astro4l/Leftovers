@@ -49,7 +49,7 @@ class BudgetAlertManager(
             maybeNotify(
                 key = "${cycle.month}-all",
                 label = "monthly budget",
-                spent = all.filter { it.type == com.leftovers.app.data.TxType.EXPENSE && !it.outOfBudget && it.date in cycle }.sumOf { it.amountMinor },
+                spent = s.plan.scoped(all).filter { it.type == com.leftovers.app.data.TxType.EXPENSE && !it.outOfBudget && it.date in cycle }.sumOf { it.amountMinor },
                 budget = monthBudget,
                 money = money,
                 notificationId = 1,

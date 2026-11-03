@@ -71,7 +71,7 @@ class MonthBudgetWidget : GlanceAppWidget() {
         val all = container.repository.getAllTransactions()
         val cycle = s.plan.cycleOf(LocalDate.now())
         val month = cycle.month
-        val spent = all.filter { it.type == TxType.EXPENSE && !it.outOfBudget && it.date in cycle }.sumOf { it.amountMinor }
+        val spent = s.plan.scoped(all).filter { it.type == TxType.EXPENSE && !it.outOfBudget && it.date in cycle }.sumOf { it.amountMinor }
         val daysLeft = cycle.daysLeft()
         if (s.plan.buckets) {
             val items = all.filter { it.date in cycle }

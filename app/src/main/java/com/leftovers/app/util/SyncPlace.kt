@@ -40,7 +40,7 @@ class FolderPlace(private val context: Context, private val tree: Uri) : SyncPla
 
     override fun read(name: String): ByteArray {
         val uri = children().firstOrNull { it.second == name }?.first ?: error("$name isn't in the folder")
-        return resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Couldn't open $name")
+        return resolver.openInputStream(uri)?.use { it.readBounded() } ?: error("Couldn't open $name")
     }
 
     override fun write(name: String, bytes: ByteArray) {
@@ -98,7 +98,7 @@ class WebDavPlace(
     override fun read(name: String): ByteArray =
         client.newCall(request(name).get().build()).execute().use { response ->
             if (!response.isSuccessful) failure(response.code, "reading $name")
-            response.body?.bytes() ?: ByteArray(0)
+            response.body?.byteStream()?.use { it.readBounded() } ?: ByteArray(0)
         }
 
     override fun write(name: String, bytes: ByteArray) {

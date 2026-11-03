@@ -113,10 +113,10 @@ class BudgetsViewModel(
         combine(planning.goals, planning.allDeposits, ::Pair),
     ) { s, categories, all, recurring, (goals, deposits) ->
         val cycle = s.plan.cycleOf(LocalDate.now())
-        val items = all.filter { it.date in cycle }
+        val items = s.plan.scoped(all.filter { it.date in cycle })
         val breakdown = s.plan.breakdownFor(cycle.month, all)
         val budget = breakdown.total
-        val pending = recurring.pendingExpenses(cycle)
+        val pending = s.plan.scopedRecurring(recurring).pendingExpenses(cycle)
         val spentByCategory = items.filter { it.type == TxType.EXPENSE }
             .groupBy { it.categoryId }
             .mapValues { (_, list) -> list.sumOf { it.amountMinor } }

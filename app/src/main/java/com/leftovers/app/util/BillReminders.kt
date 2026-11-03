@@ -85,6 +85,15 @@ class BillReminderWorker(context: Context, params: WorkerParameters) : Coroutine
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setAutoCancel(true)
+            // Bill names and amounts stay off the lock screen; only this neutral version shows there.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(applicationContext, BillReminders.CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_stat_wallet)
+                    .setContentTitle(if (due.size == 1) "A bill is due tomorrow" else "${due.size} bills due tomorrow")
+                    .setContentText("Unlock to see details")
+                    .build(),
+            )
             .build()
         NotificationManagerCompat.from(applicationContext).notify(43, notification)
         return Result.success()

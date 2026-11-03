@@ -42,10 +42,11 @@ object ExchangeRates {
                 client.newCall(Request.Builder().url(source.format(key)).build()).execute().use { response ->
                     if (!response.isSuccessful) error("The rates service said ${response.code}")
                     // {"date": "...", "inr": {"usd": 0.0105, ...}}: one unit of the base in each currency.
-                    val table = JSONObject(response.body?.string().orEmpty()).getJSONObject(key)
+                    val table = JSONObject(response.body?.byteStream()?.use { it.readBounded(MAX_REPLY_BYTES).toString(Charsets.UTF_8) }.orEmpty()).getJSONObject(key)
                     codes.mapNotNull { code ->
                         val perBase = table.optDouble(code.lowercase(), Double.NaN)
-                        if (perBase.isNaN() || perBase <= 0) null
+                        // A value that isn't a believable rate is dropped, so a bad feed can't corrupt balances.
+                        if (!MoneyMath.plausibleRate(perBase)) null
                         else code to format(BigDecimal.ONE.divide(BigDecimal.valueOf(perBase), 6, RoundingMode.HALF_UP))
                     }.toMap()
                 }

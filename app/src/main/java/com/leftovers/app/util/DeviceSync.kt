@@ -60,6 +60,11 @@ object DeviceSync {
         withContext(Dispatchers.IO) {
             runCatching {
                 val container = (context.applicationContext as LeftoversApp).container
+                // A server holds the whole ledger, so nothing goes to or comes from one without the backup password.
+                val remote = place is WebDavPlace
+                if (remote && !container.backup.hasPassword()) {
+                    error("Set a backup password first. Sync to a server uploads your whole ledger, and without one it's readable by whoever runs the server.")
+                }
                 val own = "$PREFIX${container.settings.syncDevice()}.json"
                 // Syncthing's temporary files and anything else in the folder are left alone.
                 val others = place.list().filter { it.startsWith(PREFIX) && it.endsWith(".json") && it != own }
@@ -69,7 +74,7 @@ object DeviceSync {
                 var unreadable = 0
                 others.forEach { name ->
                     runCatching { place.read(name) }
-                        .fold({ container.backup.importBytes(it, sync = true, mine = container.syncRemoved.all()) }, { Result.failure(it) })
+                        .fold({ container.backup.importBytes(it, sync = true, mine = container.syncRemoved.all(), requireEncrypted = remote) }, { Result.failure(it) })
                         .fold(
                             {
                                 added += it.entries

@@ -18,7 +18,19 @@ class BackupPasswordException(message: String) : Exception(message)
  * PBKDF2. The file stays JSON, so it is still recognisable as a Leftovers backup.
  */
 object BackupCrypto {
-    private const val ITERATIONS = 150_000
+    /** For new files: OWASP's current guidance for PBKDF2-HMAC-SHA256 is 600,000 rounds. */
+    private const val ITERATIONS = 600_000
+
+    /** What files made before the count was raised were stretched with; a file that doesn't say is read with it. */
+    private const val LEGACY_ITERATIONS = 150_000
+
+    /**
+     * A file's own settings are untrusted input (a backup can arrive through a sync folder or a download). A count far
+     * above this would freeze the phone for hours before a single password guess is checked, so it's refused instead.
+     */
+    private const val MIN_ITERATIONS = 10_000
+    private const val MAX_ITERATIONS = 2_000_000
+    private const val IV_BYTES = 12
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
 
     fun isEncrypted(json: JSONObject) = json.optBoolean("encrypted", false)
@@ -37,17 +49,21 @@ object BackupCrypto {
             .put("iterations", ITERATIONS)
             .put("salt", b64.encodeToString(salt))
             .put("iv", b64.encodeToString(iv))
-            .put("data", b64.encodeToString(cipher.doFinal(plain.toByteArray())))
+            .put("data", b64.encodeToString(cipher.doFinal(plain.toByteArray(Charsets.UTF_8))))
     }
 
     fun decrypt(wrapper: JSONObject, password: String): String {
         val b64 = Base64.getDecoder()
         val salt = b64.decode(wrapper.getString("salt"))
         val iv = b64.decode(wrapper.getString("iv"))
+        val iterations = wrapper.optInt("iterations", LEGACY_ITERATIONS)
+        require(iterations in MIN_ITERATIONS..MAX_ITERATIONS && salt.size in 8..64 && iv.size == IV_BYTES) {
+            "This backup uses protection settings Leftovers won't run"
+        }
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key(password, salt, wrapper.optInt("iterations", ITERATIONS)), GCMParameterSpec(128, iv))
+        cipher.init(Cipher.DECRYPT_MODE, key(password, salt, iterations), GCMParameterSpec(128, iv))
         return try {
-            String(cipher.doFinal(b64.decode(wrapper.getString("data"))))
+            String(cipher.doFinal(b64.decode(wrapper.getString("data"))), Charsets.UTF_8)
         } catch (e: AEADBadTagException) {
             throw BackupPasswordException("Wrong password")
         }

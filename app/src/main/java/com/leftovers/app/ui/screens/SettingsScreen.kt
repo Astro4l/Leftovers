@@ -90,6 +90,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.leftovers.app.util.readBounded
 
 class SettingsViewModel(
     private val repository: TransactionRepository,
@@ -122,7 +123,7 @@ class SettingsViewModel(
     ) {
         viewModelScope.launch {
             val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBounded() } }.getOrNull()
                     ?.let(com.leftovers.app.util.StatementFile::read)
             }
             val parsed = when (file) {

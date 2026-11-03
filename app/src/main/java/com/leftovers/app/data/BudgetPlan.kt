@@ -52,6 +52,12 @@ data class BudgetPlan(
     val bucketIncome: Long = 0,
     /** With [buckets]: adding an entry picks Needs, Wants or Savings first, then a category in it (#39). */
     val bucketPicker: Boolean = false,
+    /**
+     * [BudgetMode.RANGE] only: limit the budget to these categories and/or accounts, like a trip or a food-and-transport
+     * envelope. Empty means everything, which is how a Dates budget always worked. Only matching entries use up the amount.
+     */
+    val rangeCategoryIds: Set<Long> = emptySet(),
+    val rangeAccountIds: Set<Long> = emptySet(),
 ) {
     /** The dates of a [BudgetMode.RANGE] budget, when they're set. */
     private val range: BudgetCycle?
@@ -84,6 +90,28 @@ data class BudgetPlan(
             BudgetMode.RANGE -> rangeMinor > 0 && range != null && !LocalDate.now().isAfter(rangeTo)
         }
 
+    /** A Dates budget that only covers some categories and/or accounts. */
+    val isScoped: Boolean
+        get() = mode == BudgetMode.RANGE && (rangeCategoryIds.isNotEmpty() || rangeAccountIds.isNotEmpty())
+
+    /**
+     * Whether [item] belongs to this budget. Without a scope everything does. With one, an entry has to be on one of the
+     * chosen accounts and, for spending, in one of the chosen categories (income categories are a separate list, so
+     * the category choice only narrows spending; extra income still follows the account choice).
+     */
+    fun inScope(item: TransactionItem): Boolean = !isScoped ||
+        ((rangeAccountIds.isEmpty() || item.accountId in rangeAccountIds) &&
+            (item.type != TxType.EXPENSE || rangeCategoryIds.isEmpty() || item.categoryId in rangeCategoryIds))
+
+    /** Subscriptions that fall inside the scope, so a bill the budget doesn't cover isn't set aside from it. */
+    fun inScope(item: RecurringItem): Boolean = !isScoped ||
+        ((rangeAccountIds.isEmpty() || item.accountId in rangeAccountIds) &&
+            (item.type != TxType.EXPENSE || rangeCategoryIds.isEmpty() || item.categoryId in rangeCategoryIds))
+
+    fun scoped(items: List<TransactionItem>): List<TransactionItem> = if (!isScoped) items else items.filter { inScope(it) }
+
+    fun scopedRecurring(items: List<RecurringItem>): List<RecurringItem> = if (!isScoped) items else items.filter { inScope(it) }
+
     val customTotal: Long get() = custom.values.sum()
 
     /** Smart rollover already moves unspent money forward within the year; a one-off range has nothing to carry into. */
@@ -106,7 +134,7 @@ data class BudgetPlan(
         // A range budget: its amount, plus extra income in its dates; there's no month to month.
         val r = range
         if (mode == BudgetMode.RANGE && r != null) {
-            val income = if (!extraIncome) 0L else items.filter { it.date in r && it.type == TxType.INCOME && it.addsToBudget && !it.outOfBudget }.sumOf { it.amountMinor }
+            val income = if (!extraIncome) 0L else items.filter { it.date in r && it.type == TxType.INCOME && it.addsToBudget && !it.outOfBudget && inScope(it) }.sumOf { it.amountMinor }
             return MonthBudget(rangeMinor, income, 0)
         }
         val byMonth = items.groupBy(::budgetMonth)
@@ -128,7 +156,7 @@ data class BudgetPlan(
 
     /** What was left unspent in [month] (never negative). */
     fun leftoverOf(month: YearMonth, items: List<TransactionItem>): Long {
-        val spent = items.filter { it.type == TxType.EXPENSE && !it.outOfBudget && budgetMonth(it) == month && (mode != BudgetMode.RANGE || range?.let { r -> it.date in r } != false) }.sumOf { it.amountMinor }
+        val spent = items.filter { it.type == TxType.EXPENSE && !it.outOfBudget && inScope(it) && budgetMonth(it) == month && (mode != BudgetMode.RANGE || range?.let { r -> it.date in r } != false) }.sumOf { it.amountMinor }
         return (budgetFor(month, items) - spent).coerceAtLeast(0)
     }
 
@@ -168,6 +196,14 @@ data class BudgetPlan(
                 val month = runCatching { YearMonth.parse(k) }.getOrNull() ?: return@mapNotNull null
                 month to (v == "1")
             }.toMap()
+
+        /** The most categories or accounts a Dates budget can name; anything beyond is ignored when reading. */
+        const val MAX_SCOPE_IDS = 200
+
+        fun encodeIds(ids: Set<Long>): String = ids.sorted().joinToString(",")
+
+        fun decodeIds(raw: String?): Set<Long> =
+            raw.orEmpty().take(4000).split(',').mapNotNull { it.trim().toLongOrNull() }.filter { it > 0 }.take(MAX_SCOPE_IDS).toSet()
 
         fun encodeCustom(custom: Map<Int, Long>): String =
             custom.entries.sortedBy { it.key }.joinToString(";") { "${it.key}:${it.value}" }

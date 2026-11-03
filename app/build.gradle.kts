@@ -40,6 +40,17 @@ android {
                 keyPassword = signingValue("keyPassword", "SIGNING_KEY_PASSWORD")
             }
         }
+        // Test builds (Leftovers Dev) have a key of their own, never the release one. They're built from code that
+        // hasn't been through a release, so they must not be able to sign something the real app accepts as an update.
+        val devStorePath = signingValue("devStoreFile", "DEV_SIGNING_STORE_FILE")
+        if (devStorePath != null) {
+            create("devKey") {
+                storeFile = rootProject.file(devStorePath)
+                storePassword = signingValue("devStorePassword", "DEV_SIGNING_STORE_PASSWORD")
+                keyAlias = signingValue("devKeyAlias", "DEV_SIGNING_KEY_ALIAS")
+                keyPassword = signingValue("devKeyPassword", "DEV_SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -47,9 +58,9 @@ android {
         debug {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            // Signed with the release key when it's available (local builds, and CI builds of dev), so each
-            // new Leftovers Dev installs over the last one instead of failing with "App not installed".
-            signingConfigs.findByName("release")?.let { signingConfig = it }
+            // Signed with the Dev key when there is one, so each new Leftovers Dev installs over the last one instead
+            // of failing with "App not installed". Without one it's Android's standard debug key. Never the release key.
+            signingConfig = signingConfigs.findByName("devKey") ?: signingConfigs.getByName("debug")
         }
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
@@ -67,6 +78,8 @@ android {
             // Each Dev build is numbered (1.8.2-dev.57, from the CI run), so testers can tell them apart.
             versionNameSuffix = "-dev" + (providers.gradleProperty("devNumber").orNull?.let { ".$it" } ?: "")
             matchingFallbacks += listOf("release")
+            // initWith copied the release key; replace it with the Dev key (or the debug key when there isn't one).
+            signingConfig = signingConfigs.findByName("devKey") ?: signingConfigs.getByName("debug")
         }
     }
 

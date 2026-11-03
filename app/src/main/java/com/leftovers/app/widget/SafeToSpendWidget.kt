@@ -69,12 +69,12 @@ class SafeToSpendWidget : GlanceAppWidget() {
         val all = container.repository.getAllTransactions()
         val today = LocalDate.now()
         val cycle = s.plan.cycleOf(today)
-        val items = all.filter { it.date in cycle }
+        val items = s.plan.scoped(all.filter { it.date in cycle })
         val spentToday = items.filter { it.type == TxType.EXPENSE && it.epochDay == today.toEpochDay() }.sumOf { it.amountMinor }
         val budget = dailyBudget(
             s.plan.budgetFor(cycle.month, all),
             items,
-            container.planning.recurring.first().pendingExpenses(cycle),
+            s.plan.scopedRecurring(container.planning.recurring.first()).pendingExpenses(cycle),
             periodEnd = cycle.end,
         )
         val daysLeft = cycle.daysLeft(today)

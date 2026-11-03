@@ -39,6 +39,7 @@ object UpdateCheck {
     private const val WORK_NAME = "update_check"
     private const val LATEST = "https://api.github.com/repos/saisaharsh3/Leftovers/releases/latest"
     private const val DEV = "https://api.github.com/repos/saisaharsh3/Leftovers/releases/tags/dev-build"
+    private const val RELEASES_PAGE = "https://github.com/saisaharsh3/Leftovers/releases/latest"
 
     /** [publishedAt]: when it went up (epoch millis), for the Dev build, whose version doesn't change. */
     data class Release(val version: String, val url: String, val publishedAt: Long = 0)
@@ -49,7 +50,9 @@ object UpdateCheck {
     /** A release as one string, to keep the one found until it's installed. */
     fun encode(release: Release) = "${release.version}\n${release.url}\n${release.publishedAt}"
 
-    fun decode(text: String?): Release? = text?.split('\n')?.takeIf { it.size == 3 }?.let { Release(it[0], it[1], it[2].toLongOrNull() ?: 0) }
+    /** The link only ever points at this project's own GitHub pages, whatever was stored. */
+    fun decode(text: String?): Release? = text?.split('\n')?.takeIf { it.size == 3 }
+        ?.let { Release(it[0], SafeLinks.releasePage(it[1]) ?: RELEASES_PAGE, it[2].toLongOrNull() ?: 0) }
 
     /** Whether [release] is newer than what's installed. */
     fun isNewerThanInstalled(context: Context, release: Release): Boolean {
@@ -85,11 +88,13 @@ object UpdateCheck {
             val request = Request.Builder().url(if (dev) DEV else LATEST).header("Accept", "application/vnd.github+json").build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) error("GitHub said ${response.code}")
-                val json = JSONObject(response.body?.string().orEmpty())
+                val json = JSONObject(response.body?.byteStream()?.use { it.readBounded(MAX_REPLY_BYTES).toString(Charsets.UTF_8) }.orEmpty())
                 val published = runCatching { java.time.Instant.parse(json.getString("published_at")).toEpochMilli() }.getOrDefault(0L)
                 // The Dev build's name says when it was built: "Dev build 29 Oct 14:35 UTC".
-                val version = if (dev) json.optString("name", "Dev build") else json.getString("tag_name").removePrefix("v")
-                Release(version, json.optString("html_url", "https://github.com/saisaharsh3/Leftovers/releases/latest"), published)
+                val named = if (dev) json.optString("name", "Dev build") else json.getString("tag_name").removePrefix("v")
+                // It's shown in a notice and kept as one line of text, so it stays short and on one line.
+                val version = named.take(60).replace(Regex("\\s+"), " ").trim()
+                Release(version, SafeLinks.releasePage(json.optString("html_url")) ?: RELEASES_PAGE, published)
             }
         }
     }

@@ -178,7 +178,7 @@ object CsvImporter {
         val lastComma = t.lastIndexOf(','); val lastDot = t.lastIndexOf('.')
         t = if (lastComma > lastDot && t.length - lastComma - 1 == 2) t.replace(".", "").replace(',', '.') else t.replace(",", "")
         val value = t.toBigDecimalOrNull() ?: return null
-        val minor = value.movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
+        val minor = MoneyMath.toMinorOrNull(value.movePointRight(2)) ?: return null
         return if (negative) -minor else minor
     }
 

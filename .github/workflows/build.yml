@@ -18,14 +18,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
@@ -33,7 +35,7 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: leftovers-debug
           path: app/build/outputs/apk/debug/app-debug.apk
@@ -41,41 +43,68 @@ jobs:
 
   # Each push to dev is published as a "Dev build" pre-release with the APK attached, so it can be
   # downloaded and installed straight from the phone. It never replaces the real latest release.
-  dev-build:
+  # Builds the Dev APK. This job runs the repository's own build scripts, so it only gets a read-only token and the
+  # Dev signing key. The release key is never available to it, and it can't publish anything.
+  dev-apk:
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
 
-      - name: Build Leftovers Dev (optimized like a release), signed with the release key
+      - name: Build Leftovers Dev (optimized like a release), signed with the Dev key
         env:
-          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          DEV_SIGNING_KEYSTORE_BASE64: ${{ secrets.DEV_SIGNING_KEYSTORE_BASE64 }}
+          DEV_SIGNING_STORE_PASSWORD: ${{ secrets.DEV_SIGNING_STORE_PASSWORD }}
+          DEV_SIGNING_KEY_ALIAS: ${{ secrets.DEV_SIGNING_KEY_ALIAS }}
+          DEV_SIGNING_KEY_PASSWORD: ${{ secrets.DEV_SIGNING_KEY_PASSWORD }}
         run: |
-          if [ -n "$SIGNING_KEYSTORE_BASE64" ]; then
-            echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > release.jks
-            export SIGNING_STORE_FILE=release.jks
+          if [ -n "$DEV_SIGNING_KEYSTORE_BASE64" ]; then
+            echo "$DEV_SIGNING_KEYSTORE_BASE64" | base64 --decode > dev.jks
+            export DEV_SIGNING_STORE_FILE=dev.jks
           fi
           ./gradlew assembleDev -PdevNumber=${{ github.run_number }} --stacktrace
-          rm -f release.jks
+          rm -f dev.jks
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: leftovers-dev-apk
+          path: app/build/outputs/apk/dev/app-dev.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  # Publishes the APK the job above built. It has write access, but it never runs the repository's build code and
+  # never sees a signing key.
+  dev-build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: dev-apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: leftovers-dev-apk
+          path: dev-apk
 
       - name: Publish the Dev build pre-release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/dev/app-dev.apk leftovers-dev.apk
+          cp dev-apk/app-dev.apk leftovers-dev.apk
           # The notes list what's new since the last release: the Unreleased section of the changelog.
           {
             echo "Test build of the dev branch ($(git rev-parse --short HEAD)), built $(date -u +'%d %b %Y %H:%M') UTC."

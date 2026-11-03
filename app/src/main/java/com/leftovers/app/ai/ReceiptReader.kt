@@ -44,7 +44,7 @@ object ReceiptReader {
         val o = runCatching { JSONObject(reply.substring(start, end + 1)) }.getOrNull() ?: return null
         if (o.isNull("amount")) return null
         val amount = runCatching { BigDecimal(o.get("amount").toString().replace(",", "")) }.getOrNull() ?: return null
-        val minor = amount.movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
+        val minor = com.leftovers.app.util.MoneyMath.toMinorOrNull(amount.movePointRight(2)) ?: return null
         if (minor <= 0 || minor > 1_000_000_000L) return null
         // A date the bill can't have (tomorrow, or years ago) is dropped rather than trusted.
         val date = o.optString("date").takeIf { it.isNotBlank() && it != "null" }

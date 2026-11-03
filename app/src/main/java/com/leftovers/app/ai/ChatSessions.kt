@@ -7,6 +7,8 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import com.leftovers.app.util.MAX_REPLY_BYTES
+import com.leftovers.app.util.readBounded
 
 /** A command the model wants to run, in provider-neutral form. */
 data class ToolCall(val id: String, val name: String, val args: JSONObject)
@@ -338,7 +340,7 @@ object UrlConnectionTransport : HttpTransport {
         try {
             if (body != null) conn.outputStream.use { it.write(body.toByteArray()) }
             val code = conn.responseCode
-            HttpReply(code, (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty())
+            HttpReply(code, (if (code in 200..299) conn.inputStream else conn.errorStream)?.use { it.readBounded(MAX_REPLY_BYTES).toString(Charsets.UTF_8) }.orEmpty())
         } finally {
             conn.disconnect()
         }

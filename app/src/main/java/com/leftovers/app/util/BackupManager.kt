@@ -89,6 +89,8 @@ class BackupManager(
                     put("bucketPicker", s.plan.bucketPicker)
                     s.plan.rangeFrom?.let { put("rangeFrom", it.toString()) }
                     s.plan.rangeTo?.let { put("rangeTo", it.toString()) }
+                    if (s.plan.rangeCategoryIds.isNotEmpty()) put("rangeCategories", BudgetPlan.encodeIds(s.plan.rangeCategoryIds))
+                    if (s.plan.rangeAccountIds.isNotEmpty()) put("rangeAccounts", BudgetPlan.encodeIds(s.plan.rangeAccountIds))
                     put("carryChoices", BudgetPlan.encodeChoices(s.plan.carryChoices))
                     s.plan.carryFrom?.let { put("carryFrom", it.toString()) }
                 })
@@ -168,10 +170,14 @@ class BackupManager(
         keep: Boolean = false,
         sync: Boolean = false,
         mine: List<SyncRemoved.Removed> = emptyList(),
+        requireEncrypted: Boolean = false,
     ): Result<Restored> = withContext(Dispatchers.IO) {
-        runCatching { context.contentResolver.openInputStream(source)?.use { it.readBytes() } ?: error("Couldn't open the file") }
-            .fold({ importBytes(it, typedPassword, keep, sync, mine) }, { Result.failure(it) })
+        runCatching { context.contentResolver.openInputStream(source)?.use { it.readBounded() } ?: error("Couldn't open the file") }
+            .fold({ importBytes(it, typedPassword, keep, sync, mine, requireEncrypted) }, { Result.failure(it) })
     }
+
+    /** Whether a backup password is set, which is what encrypts backups and sync files. */
+    fun hasPassword(): Boolean = password.get() != null
 
     /** [import], from a backup file's contents. */
     suspend fun importBytes(
@@ -180,12 +186,17 @@ class BackupManager(
         keep: Boolean = false,
         sync: Boolean = false,
         mine: List<SyncRemoved.Removed> = emptyList(),
+        /** For files from a server: only password-protected ones are accepted, since only you can make those. */
+        requireEncrypted: Boolean = false,
     ): Result<Restored> = withContext(Dispatchers.IO) {
         runCatching {
             // A spreadsheet or another app's export picked here by mistake: say so, rather than a JSON error.
             val text = StatementFile.decodeText(bytes).trimStart()
             if (!text.startsWith("{")) throw NotABackupException()
             var json = runCatching { JSONObject(text) }.getOrElse { throw NotABackupException() }
+            if (requireEncrypted && !BackupCrypto.isEncrypted(json)) {
+                throw IllegalArgumentException("Skipped a file that isn't password-protected, so it can't be trusted to be yours")
+            }
             if (BackupCrypto.isEncrypted(json)) {
                 val key = typedPassword ?: password.get() ?: throw BackupPasswordException("This backup has a password")
                 json = JSONObject(BackupCrypto.decrypt(json, key))
@@ -243,7 +254,7 @@ class BackupManager(
             val goals = json.optJSONArray("goals")?.objects().orEmpty().map {
                 Goal(
                     it.getLong("id"), it.getString("name"), it.getString("icon"), it.getLong("color"), it.getLong("target"), it.getString("targetMonth"), it.getLong("createdAt"),
-                    link = it.stringOrNull("link"), linkPriceMinor = it.longOrNull("linkPrice"), linkCheckedAt = it.longOrNull("linkCheckedAt"),
+                    link = SafeLinks.web(it.stringOrNull("link")), linkPriceMinor = it.longOrNull("linkPrice"), linkCheckedAt = it.longOrNull("linkCheckedAt"),
                     moreLinks = it.stringOrNull("moreLinks"),
                 )
             }
@@ -345,6 +356,8 @@ class BackupManager(
                         bucketPicker = s.optBoolean("bucketPicker", false),
                         rangeFrom = s.optString("rangeFrom").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
                         rangeTo = s.optString("rangeTo").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
+                        rangeCategoryIds = BudgetPlan.decodeIds(s.optString("rangeCategories")),
+                        rangeAccountIds = BudgetPlan.decodeIds(s.optString("rangeAccounts")),
                         carryChoices = BudgetPlan.decodeChoices(s.optString("carryChoices")),
                         carryFrom = s.optString("carryFrom").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.YearMonth.parse(it) }.getOrNull() },
                     ),
